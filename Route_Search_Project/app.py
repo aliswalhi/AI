@@ -1,6 +1,5 @@
 """Streamlit interface and Plotly diagram for the route-search assignment."""
 
-import hashlib
 from html import escape
 import json
 import math
@@ -9,9 +8,9 @@ from pathlib import Path
 import plotly.graph_objects as go
 import streamlit as st
 
-from algorithms import ALGORITHMS, SearchResult, compare_all, comparison_rows, run_search
+from algorithms import ALGORITHMS, compare_all, comparison_rows, run_search
 from map_utils import (
-    MapValidationError, RoadMap, alphabetical, format_distance,
+    MapValidationError, alphabetical, format_distance,
     heuristic, heuristic_is_consistent, load_map, map_to_dict, parse_map,
 )
 
@@ -30,20 +29,20 @@ ALGORITHM_NOTES = {
 
 
 def build_network_figure(
-    road_map: RoadMap, start: str, goal: str, result: SearchResult | None = None,
-    show_distances: bool = True,
-) -> go.Figure:
+    road_map, start, goal, result=None,
+    show_distances=True,
+):
     """Draw the supplied coordinates, with separate road, route and city layers."""
     figure = go.Figure()
-    route = result.path if result and result.found else []
+    route = result['path'] if result and result['path'] else []
     selected_edges = {frozenset((a, b)) for a, b in zip(route, route[1:])}
-    positions = road_map.coordinates
+    positions = road_map['coordinates']
     all_x = [point[0] for point in positions.values()]
     all_y = [point[1] for point in positions.values()]
     span = max(max(all_x) - min(all_x), max(all_y) - min(all_y), 1)
     road_labels = []
 
-    for index, (source, target, distance) in enumerate(road_map.roads):
+    for index, (source, target, distance) in enumerate(road_map['roads']):
         x1, y1 = positions[source]
         x2, y2 = positions[target]
         selected = frozenset((source, target)) in selected_edges
@@ -79,7 +78,8 @@ def build_network_figure(
     cities = list(positions)
     center_x = (min(all_x) + max(all_x)) / 2
 
-    def city_label_position(city: str) -> str:
+    def city_label_position(city):
+        # Keep this positioning to preserve the map.
         # Estimate text bounds in coordinate units to avoid nearby distance labels.
         x, y = positions[city]
         half_width = len(city) * span * 0.006
@@ -102,7 +102,7 @@ def build_network_figure(
         return min(candidates, key=overlaps)[0]
 
     hover_labels = [
-        f"{escape(city)}<br>{len(road_map.graph[city])} road connections"
+        f"{escape(city)}<br>{len(road_map['graph'][city])} road connections"
         f"<br>h to {escape(goal)} = {heuristic(positions, city, goal)} km"
         for city in cities
     ]
@@ -141,12 +141,12 @@ def build_network_figure(
         yaxis={"visible": False, "range": [min(all_y) - padding / 2, max(all_y) + padding / 2], "scaleanchor": "x", "scaleratio": 1},
         legend={"orientation": "h", "x": 0.5, "xanchor": "center", "y": -0.03, "yanchor": "top", "font": {"size": 11}},
         hoverlabel={"bgcolor": "white", "font_size": 12},
-        dragmode="pan", uirevision=road_map.name,
+        dragmode="pan", uirevision=road_map['name'],
     )
     return figure
 
 
-def render_result(result: SearchResult | None, algorithm: str, start: str, goal: str) -> None:
+def render_result(result, algorithm, start, goal):
     with st.container(border=True):
         st.caption("YOUR SEARCH")
         st.subheader(ALGORITHM_NOTES[algorithm][0])
@@ -158,23 +158,23 @@ def render_result(result: SearchResult | None, algorithm: str, start: str, goal:
             return
 
         distance_column, steps_column = st.columns(2)
-        distance_column.metric("Total distance", f"{format_distance(result.cost)} km" if result.found else "—")
-        steps_column.metric("Search steps", result.steps)
+        distance_column.metric("Total distance", f"{format_distance(result['cost'])} km" if result['path'] else "—")
+        steps_column.metric("Search steps", result['steps'])
         st.caption("Steps count unique frontier removals, including the goal.")
-        if result.found:
+        if result['path']:
             st.success("Route found")
-            st.text(" → ".join(result.path))
-            with st.expander(f"Route details · {len(result.path) - 1} roads"):
-                for index, city in enumerate(result.path, 1):
+            st.text(" → ".join(result['path']))
+            with st.expander(f"Route details · {len(result['path']) - 1} roads"):
+                for index, city in enumerate(result['path'], 1):
                     st.text(f"{index:02d}  {city}")
         else:
             st.warning(f"No route connects {start} to {goal} in this map.")
         with st.expander("Inspect expansion order"):
-            st.text(" → ".join(result.expanded))
+            st.text(" → ".join(result['expanded']))
             st.caption("Duplicate and stale frontier entries are skipped without adding steps.")
 
 
-def main() -> None:
+def main():
     st.set_page_config(page_title="AI Route Search", page_icon="🧭", layout="wide")
 
     with st.sidebar:
@@ -197,19 +197,20 @@ def main() -> None:
                 st.caption("The default map is active. Correct the file and upload it again.")
 
         payload = json.dumps(map_to_dict(road_map), sort_keys=True, ensure_ascii=False)
-        map_key = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-        cities = sorted(road_map.graph, key=alphabetical)
-        if st.session_state.get("map_key") != map_key:
-            st.session_state["map_key"] = map_key
+        cities = sorted(road_map['graph'], key=alphabetical)
+        if st.session_state.get("map_data") != payload:
+            st.session_state["map_data"] = payload
+            st.session_state["map_version"] = st.session_state.get("map_version", 0) + 1
             # Derive defaults from the file, not from hardcoded city names.
-            st.session_state["start_city"] = next(iter(road_map.coordinates))
-            st.session_state["goal_city"] = next(reversed(road_map.coordinates))
+            st.session_state["start_city"] = next(iter(road_map['coordinates']))
+            st.session_state["goal_city"] = next(reversed(road_map['coordinates']))
 
         st.divider()
         start = st.selectbox("Start City", cities, key="start_city")
         goal = st.selectbox("Goal City", cities, key="goal_city")
         algorithm = st.selectbox("Algorithm", ALGORITHMS, index=4, key="algorithm")
 
+        map_key = st.session_state["map_version"]
         context = (map_key, start, goal)
         if st.session_state.get("search_context") != context:
             st.session_state["search_context"] = context
@@ -239,9 +240,9 @@ def main() -> None:
     st.divider()
     name_column, cities_column, roads_column, algorithms_column = st.columns([3, 1, 1, 1])
     name_column.caption("ACTIVE ROAD NETWORK")
-    name_column.write(road_map.name)
+    name_column.write(road_map['name'])
     cities_column.metric("Cities", len(cities))
-    roads_column.metric("Two-way roads", len(road_map.roads))
+    roads_column.metric("Two-way roads", len(road_map['roads']))
     algorithms_column.metric("Algorithms", len(ALGORITHMS))
 
     if (algorithm == "A*" or comparison) and not heuristic_is_consistent(road_map, goal):
@@ -278,7 +279,7 @@ def main() -> None:
                 "Steps": st.column_config.NumberColumn(format="%d"),
             },
         )
-        if any(item.found for item in comparison.values()):
+        if any(item['path'] for item in comparison.values()):
             st.caption("Optimal = lowest computed cost. Every result sharing that cost is marked. UCS supplies the minimum-cost reference.")
         else:
             st.info("No algorithm found a route. The selected cities are disconnected.")

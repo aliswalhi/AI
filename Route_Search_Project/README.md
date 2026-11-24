@@ -20,7 +20,8 @@ Student 2: [omar soud] — [12220165]
 ## Technologies and files
 
 Python 3.11+, Streamlit and Plotly. The algorithms use only the Python standard
-library (`collections`, `heapq`, `math` and `dataclasses`). No NetworkX or
+library (`collections`, `heapq` and `math`), with ordinary dictionaries for maps
+and search results. No NetworkX or
 ready-made graph/search algorithm is used. The interface uses native Streamlit
 widgets and its theme configuration, with no custom HTML, CSS or JavaScript.
 
@@ -35,7 +36,7 @@ Route_Search_Project/
 ├── .streamlit/
 │   └── config.toml           # Theme, upload limit and telemetry setting
 └── tests/
-    ├── test_search.py        # Search correctness and independent distance oracle
+    ├── test_search.py        # Search correctness and assignment rules
     ├── test_maps.py          # JSON, graph and validation checks
     └── test_app.py           # Streamlit interactions and Plotly diagram checks
 ```
